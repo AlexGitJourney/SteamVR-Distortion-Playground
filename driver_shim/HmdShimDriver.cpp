@@ -21,6 +21,8 @@
 // SOFTWARE.
 
 #include "pch.h"
+#include <cmath>
+#include <algorithm>
 
 #include "ShimDriverManager.h"
 #include "DetourUtils.h"
@@ -28,6 +30,24 @@
 
 namespace {
     using namespace driver_shim;
+
+
+    // Radius is normalized by half the shorter panel dimension. Integrating a
+    // smoothstep slope gives unit slope in the center and constant outer slope.
+    static float CenterEdgeScale(float radius, float center, float strength) {
+        if (radius <= center || radius <= 0.0f) {
+            return 1.0f;
+        }
+        const float width = 1.0f - center;
+        float offset;
+        if (radius < 1.0f) {
+            const float t = (radius - center) / width;
+            offset = width * t * t * t * (1.0f - 0.5f * t);
+        } else {
+            offset = 0.5f * width + radius - 1.0f;
+        }
+        return 1.0f + strength * offset / radius;
+    }
 
     struct DistortionModel {
         float codX;
@@ -240,8 +260,8 @@ namespace {
                 const float x = fU * width;
                 const float y = fV * height;
 
-                // Brown-Conrady function itself.
-                const auto BrownConrady = [](float x,
+                const float halfPanel = 0.5f * static_cast<float>(width < height ? width : height);
+                const auto MapChannel = [this, halfPanel](float x,
                                              float y,
                                              DirectX::XMMATRIX invAffine,
                                              float codX,
@@ -254,7 +274,9 @@ namespace {
                     // Apply radial and tangential distortion.
                     const XMFLOAT2 delta(x - codX, y - codY);
                     const float r2 = delta.x * delta.x + delta.y * delta.y;
-                    const float d = 1.0f + r2 * (k1 + r2 * (k2 + r2 * k3));
+                    const float d = m_centerMode && halfPanel > 0
+                        ? CenterEdgeScale(std::sqrt(r2) / halfPanel, m_centerRadius, m_edgeStrength)
+                        : 1.0f + r2 * (k1 + r2 * (k2 + r2 * k3));
                     const XMVECTOR p = XMVectorSet((delta.x * d) + codX, (delta.y * d) + codY, 1.f, 1.f);
 
                     // Correct projection.
@@ -280,7 +302,7 @@ namespace {
 
                 // Apply the distortion to each channel.
                 SetResult(result.rfRed,
-                          BrownConrady(x,
+                          MapChannel(x,
                                        y,
                                        m_invAffine[eEye],
                                        m_distortionModel[eEye][0].codX,
@@ -289,7 +311,7 @@ namespace {
                                        m_distortionModel[eEye][0].k2,
                                        m_distortionModel[eEye][0].k3));
                 SetResult(result.rfGreen,
-                          BrownConrady(x,
+                          MapChannel(x,
                                        y,
                                        m_invAffine[eEye],
                                        m_distortionModel[eEye][1].codX,
@@ -298,7 +320,7 @@ namespace {
                                        m_distortionModel[eEye][1].k2,
                                        m_distortionModel[eEye][1].k3));
                 SetResult(result.rfBlue,
-                          BrownConrady(x,
+                          MapChannel(x,
                                        y,
                                        m_invAffine[eEye],
                                        m_distortionModel[eEye][2].codX,
@@ -407,8 +429,16 @@ namespace {
                 0.0f,                  0.0f,                  0.0f, 1.0f);
             // clang-format on
 
+            auto* settings = vr::VRSettings();
+            const bool centerMode = settings->GetFloat("driver_distortion_shim", "center_edge_mode") >= 0.5f;
+            const float centerRadius = std::clamp(settings->GetFloat("driver_distortion_shim", "center_radius_pct"), 0.0f, 80.0f) / 100.0f;
+            const float edgeStrength = std::clamp(settings->GetFloat("driver_distortion_shim", "edge_slope_pct"), -60.0f, 60.0f) / 100.0f;
+            const bool curveChanged = centerMode != m_centerMode || centerRadius != m_centerRadius || edgeStrength != m_edgeStrength;
+            m_centerMode = centerMode;
+            m_centerRadius = centerRadius;
+            m_edgeStrength = edgeStrength;
             // Detect changes.
-            const bool changed = memcmp(m_distortionModel, newDistortionModel, sizeof(newDistortionModel)) ||
+            const bool changed = curveChanged || memcmp(m_distortionModel, newDistortionModel, sizeof(newDistortionModel)) ||
                                  memcmp(&m_affine[0], &newAffineLeft, sizeof(newAffineLeft)) ||
                                  memcmp(&m_affine[1], &newAffineRight, sizeof(newAffineRight));
 
@@ -446,6 +476,10 @@ namespace {
         vr::TrackedDeviceIndex_t m_deviceIndex = vr::k_unTrackedDeviceIndexInvalid;
         vr::IVRDisplayComponent* m_shimmedDisplayComponent = nullptr;
         bool m_isNotDirectModeDriver = false;
+
+        bool m_centerMode = false;
+        float m_centerRadius = 0.0f;
+        float m_edgeStrength = 0.0f;
 
         // Affine transform.
         DirectX::XMMATRIX m_affine[2];

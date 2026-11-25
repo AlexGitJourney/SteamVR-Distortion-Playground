@@ -1,5 +1,8 @@
 {
   "driver_distortion_shim": {
+    "center_edge_mode": 0,
+    "center_radius_pct": 35,
+    "edge_slope_pct": 0,
     "loadPriority": 1000,
 
     "left_focal_length_x": 0.6,

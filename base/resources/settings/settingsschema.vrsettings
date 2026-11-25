@@ -5,6 +5,42 @@
     "show_without_hmd": true,
     "values": [
       {
+        "name": "/settings/driver_distortion_shim/center_edge_mode",
+        "control": "slider",
+        "type": "float",
+        "label": "Curve mode (0 = original, 1 = center and edge)",
+        "min": 0,
+        "max": 1,
+        "step": 1,
+        "decimals": 0,
+        "advanced_only": false,
+        "requires_restart": false
+      },
+      {
+        "name": "/settings/driver_distortion_shim/center_radius_pct",
+        "control": "slider",
+        "type": "float",
+        "label": "Center radius (% of half panel)",
+        "min": 0,
+        "max": 80,
+        "step": 0.5,
+        "decimals": 1,
+        "advanced_only": false,
+        "requires_restart": false
+      },
+      {
+        "name": "/settings/driver_distortion_shim/edge_slope_pct",
+        "control": "slider",
+        "type": "float",
+        "label": "Outer radial slope change (%)",
+        "min": -60,
+        "max": 60,
+        "step": 0.25,
+        "decimals": 2,
+        "advanced_only": false,
+        "requires_restart": false
+      },
+      {
         "name": "/settings/driver_distortion_shim/left_focal_length_x",
         "control": "slider",
         "type": "float",
